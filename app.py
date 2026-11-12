@@ -2,372 +2,513 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 from pathlib import Path
 
+# --------------------------------------------------
+# CONFIGURACIÓN GENERAL
+# --------------------------------------------------
+
 st.set_page_config(
-    page_title="OILRED | Dashboard Industrial",
+    page_title="OILRED | Dashboard industrial",
     page_icon="🏭",
     layout="wide"
 )
 
-# Configuración visual
-st.markdown("""
-<style>
-.stApp {
-    background-color: #F4F7FB;
-}
-h1, h2, h3 {
-    color: #142B4A;
-}
-div[data-testid="stMetric"] {
-    background-color: white;
-    border: 1px solid #E3EAF2;
-    padding: 15px;
-    border-radius: 12px;
-}
-.hero {
-    background: linear-gradient(110deg, #142B4A, #2878B5);
-    padding: 25px;
-    border-radius: 15px;
-    color: white;
-}
-.hero h1 {
-    color: white;
-}
-.hero p {
-    color: #E8F2FA;
-}
-</style>
-""", unsafe_allow_html=True)
+NAVY = "#142B4A"
+BLUE = "#2878B5"
+TEAL = "#16A6A1"
+ORANGE = "#F39C45"
+RED = "#D9534F"
 
+# --------------------------------------------------
+# CARGA DE DATOS
+# --------------------------------------------------
 
-# Cargar datos
 @st.cache_data
-def cargar_datos():
-    ruta = Path(__file__).parent / "data" / "dataset_planta_bigdata.csv"
-    df = pd.read_csv(ruta)
+def load_data():
 
-    df["timestamp"] = pd.to_datetime(
-        df["timestamp"], errors="coerce"
+    path = Path(__file__).parent / "data" / "dataset_planta_bigdata.csv"
+
+    data = pd.read_csv(path)
+
+    data["timestamp"] = pd.to_datetime(
+        data["timestamp"],
+        errors="coerce"
     )
 
-    columnas = [
-        "temperatura", "vibracion", "presion",
-        "produccion", "defectos", "falla"
+    columnas_numericas = [
+        "temperatura",
+        "vibracion",
+        "presion",
+        "produccion",
+        "defectos",
+        "falla"
     ]
 
-    for columna in columnas:
-        df[columna] = pd.to_numeric(
-            df[columna], errors="coerce"
-        )
+    for col in columnas_numericas:
+        data[col] = pd.to_numeric(data[col], errors="coerce")
 
-    df = df.dropna(
+    data = data.dropna(
         subset=["timestamp", "linea", "turno"]
     )
 
-    return df
+    return data
 
 
-df = cargar_datos()
+df = load_data()
 
+# --------------------------------------------------
+# DISEÑO VISUAL
+# --------------------------------------------------
 
-# Encabezado
+st.markdown("""
+<style>
+
+.stApp {
+    background-color: #F4F7FB;
+}
+
+h1, h2, h3 {
+    color: #142B4A;
+}
+
+div[data-testid="stMetric"] {
+    background: white;
+    border: 1px solid #E3EAF2;
+    padding: 14px 16px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px #142b4a0c;
+}
+
+div[data-testid="stMetricLabel"] {
+    color: #52657A;
+}
+
+.hero {
+    background: linear-gradient(110deg,#142B4A,#2878B5);
+    padding: 24px 28px;
+    border-radius: 16px;
+    color: white;
+    margin-bottom: 18px;
+}
+
+.hero h1 {
+    color: white;
+    margin: 0;
+    font-size: 30px;
+}
+
+.hero p {
+    color: #E8F2FA;
+    margin: 6px 0 0 0;
+}
+
+.note {
+    color: #63758A;
+    font-size: 0.86rem;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
 st.markdown("""
 <div class="hero">
-    <h1>🏭 OILRED | Monitoreo Industrial</h1>
+    <h1>🏭 OILRED | Monitoreo industrial</h1>
     <p>
-    Dashboard de supervisión y análisis de producción,
-    calidad, variables operativas y fallas.
+    Centro de análisis de producción, calidad,
+    variables operativas y eventos de falla
     </p>
 </div>
 """, unsafe_allow_html=True)
 
-
+# --------------------------------------------------
 # FILTROS
+# --------------------------------------------------
+
 st.sidebar.title("⚙️ Panel de filtros")
 
-lineas = sorted(df["linea"].unique().tolist())
-turnos = sorted(df["turno"].unique().tolist())
+st.sidebar.caption(
+    "Los filtros se aplican a todas las secciones."
+)
 
-seleccion_lineas = st.sidebar.multiselect(
+lineas = sorted(
+    df["linea"].dropna().unique().tolist()
+)
+
+turnos = [
+    x for x in ["Mañana", "Tarde", "Noche"]
+    if x in df["turno"].unique()
+]
+
+sel_lineas = st.sidebar.multiselect(
     "Líneas de producción",
     lineas,
     default=lineas
 )
 
-seleccion_turnos = st.sidebar.multiselect(
+sel_turnos = st.sidebar.multiselect(
     "Turnos",
     turnos,
     default=turnos
 )
 
-fecha_min = df["timestamp"].min().date()
-fecha_max = df["timestamp"].max().date()
+min_date = df["timestamp"].min().date()
+max_date = df["timestamp"].max().date()
 
 fechas = st.sidebar.date_input(
     "Rango de fechas",
-    value=(fecha_min, fecha_max),
-    min_value=fecha_min,
-    max_value=fecha_max
+    value=(min_date, max_date),
+    min_value=min_date,
+    max_value=max_date
 )
 
-if isinstance(fechas, (tuple, list)):
-    if len(fechas) == 2:
-        inicio, fin = fechas
-    elif len(fechas) == 1:
-        inicio = fin = fechas[0]
-    else:
-        inicio, fin = fecha_min, fecha_max
+if isinstance(fechas, tuple) and len(fechas) == 2:
+    fecha_ini, fecha_fin = fechas
+elif isinstance(fechas, tuple) and len(fechas) == 1:
+    fecha_ini = fecha_fin = fechas[0]
 else:
-    inicio = fin = fechas
+    fecha_ini = fecha_fin = fechas
 
-datos = df[
-    (df["linea"].isin(seleccion_lineas)) &
-    (df["turno"].isin(seleccion_turnos)) &
-    (df["timestamp"].dt.date >= inicio) &
-    (df["timestamp"].dt.date <= fin)
+f = df[
+    df["linea"].isin(sel_lineas)
+    & df["turno"].isin(sel_turnos)
+    & (df["timestamp"].dt.date >= fecha_ini)
+    & (df["timestamp"].dt.date <= fecha_fin)
 ].copy()
 
-if datos.empty:
-    st.warning("No existen registros para los filtros seleccionados.")
+if f.empty:
+    st.warning(
+        "No hay registros para los filtros seleccionados. "
+        "Ajusta las líneas, turnos o fechas."
+    )
     st.stop()
 
+# --------------------------------------------------
+# CÁLCULOS GENERALES
+# --------------------------------------------------
 
-# CÁLCULO DE KPI
-produccion_total = datos["produccion"].sum()
-produccion_promedio = datos["produccion"].mean()
-defectos_total = datos["defectos"].sum()
+f["fecha_hora"] = f["timestamp"].dt.floor("h")
+f["fecha"] = f["timestamp"].dt.date
 
-porcentaje_defectos = (
-    defectos_total / produccion_total * 100
-    if produccion_total > 0 else 0
+prod_total = f["produccion"].sum()
+def_total = f["defectos"].sum()
+
+fallas = int((f["falla"] == 1).sum())
+
+pct_def = (
+    def_total / prod_total * 100
+    if prod_total else 0
 )
 
-registros_falla = int((datos["falla"] == 1).sum())
-
-porcentaje_falla = (
-    registros_falla / len(datos) * 100
+pct_falla = (
+    fallas / len(f) * 100
+    if len(f) else 0
 )
 
+# --------------------------------------------------
+# SECCIONES DEL DASHBOARD
+# --------------------------------------------------
 
-# NAVEGACIÓN
-resumen, produccion, variables, fallas = st.tabs([
+tabs = st.tabs([
     "📊 Resumen general",
     "📦 Producción y calidad",
     "🌡️ Variables operativas",
     "🚨 Análisis de fallas"
 ])
 
-
 # ==================================================
 # 1. RESUMEN GENERAL
 # ==================================================
 
-with resumen:
+with tabs[0]:
 
-    st.header("Resumen general de la planta")
+    st.subheader("Resumen general de la planta")
 
     st.caption(
-        f"Periodo analizado: {inicio} hasta {fin} | "
-        f"{len(datos):,} registros"
+        f"Periodo: {fecha_ini:%d/%m/%Y} – "
+        f"{fecha_fin:%d/%m/%Y} · "
+        f"{len(f):,} registros seleccionados"
     )
 
-    col1, col2, col3 = st.columns(3)
+    c = st.columns(3)
 
-    col1.metric(
+    c[0].metric(
         "Producción total",
-        f"{produccion_total:,.0f}"
+        f"{prod_total:,.0f}"
     )
 
-    col2.metric(
-        "Producción promedio",
-        f"{produccion_promedio:.2f}"
+    c[1].metric(
+        "Producción promedio / registro",
+        f"{f['produccion'].mean():.2f}"
     )
 
-    col3.metric(
+    c[2].metric(
         "Defectos totales",
-        f"{defectos_total:,.0f}"
+        f"{def_total:,.0f}"
     )
 
-    col4, col5, col6 = st.columns(3)
+    c = st.columns(3)
 
-    col4.metric(
+    c[0].metric(
         "Porcentaje de defectos",
-        f"{porcentaje_defectos:.2f}%"
+        f"{pct_def:.2f}%"
     )
 
-    col5.metric(
+    c[1].metric(
         "Registros con falla",
-        f"{registros_falla:,}"
+        f"{fallas:,}"
     )
 
-    col6.metric(
-        "Porcentaje de fallas",
-        f"{porcentaje_falla:.2f}%"
+    c[2].metric(
+        "Registros con falla (%)",
+        f"{pct_falla:.2f}%"
     )
 
     st.divider()
 
-    izquierda, derecha = st.columns(2)
+    left, right = st.columns(2)
 
-    with izquierda:
-
-        produccion_linea = datos.groupby(
-            "linea", as_index=False
-        )["produccion"].sum()
-
-        fig = px.bar(
-            produccion_linea,
-            x="linea",
-            y="produccion",
-            color="linea",
-            title="Producción acumulada por línea",
-            text_auto=","
-        )
-
-        fig.update_layout(showlegend=False)
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-    with derecha:
-
-        produccion_dia = datos.groupby(
-            datos["timestamp"].dt.date
-        )["produccion"].sum().reset_index()
-
-        produccion_dia.columns = [
-            "fecha", "produccion"
-        ]
-
-        fig = px.line(
-            produccion_dia,
-            x="fecha",
-            y="produccion",
-            markers=True,
-            title="Evolución diaria de producción"
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-    # Hallazgos dinámicos
-    st.subheader("Hallazgos y recomendaciones")
-
-    estadisticas = datos.groupby("linea").agg(
+    by_line = f.groupby(
+        "linea",
+        as_index=False
+    ).agg(
         produccion=("produccion", "sum"),
         fallas=("falla", "sum")
     )
 
-    tasa_fallas = datos.groupby("linea")[
-        "falla"
-    ].mean() * 100
+    with left:
 
-    linea_productiva = estadisticas["produccion"].idxmax()
-    linea_fallas = estadisticas["fallas"].idxmax()
-    linea_tasa = tasa_fallas.idxmax()
+        fig = px.bar(
+            by_line,
+            x="linea",
+            y="produccion",
+            color="linea",
+            text_auto=",",
+            title="Producción acumulada por línea",
+            color_discrete_sequence=[
+                BLUE, TEAL, ORANGE
+            ]
+        )
 
-    st.markdown(
-        f"- La línea con mayor producción es **{linea_productiva}**, "
-        f"con {estadisticas.loc[linea_productiva, 'produccion']:,.0f} unidades."
+        fig.update_layout(
+            showlegend=False,
+            xaxis_title="",
+            yaxis_title="Unidades producidas"
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+    with right:
+
+        by_day = f.groupby(
+            f["timestamp"].dt.date,
+            as_index=False
+        )["produccion"].sum()
+
+        by_day.columns = [
+            "fecha",
+            "produccion"
+        ]
+
+        fig = px.line(
+            by_day,
+            x="fecha",
+            y="produccion",
+            markers=True,
+            title="Evolución diaria de la producción"
+        )
+
+        fig.update_traces(
+            line_color=BLUE
+        )
+
+        fig.update_layout(
+            xaxis_title="Fecha",
+            yaxis_title="Unidades producidas"
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+    # HALLAZGOS
+
+    st.subheader("Hallazgos y recomendaciones")
+
+    line_stats = f.groupby("linea").agg(
+        produccion=("produccion", "sum"),
+        fallas=("falla", "sum"),
+        defectos=("defectos", "sum")
+    ).copy()
+
+    line_stats["tasa_falla"] = (
+        f.groupby("linea")["falla"].mean() * 100
     )
 
-    st.markdown(
-        f"- La línea con más registros de falla es **{linea_fallas}**, "
-        f"con {estadisticas.loc[linea_fallas, 'fallas']:,.0f} eventos."
-    )
+    if not line_stats.empty:
 
-    st.markdown(
-        f"- La mayor tasa de fallas corresponde a **{linea_tasa}**, "
-        f"con {tasa_fallas.loc[linea_tasa]:.2f}%."
-    )
+        top_prod = line_stats["produccion"].idxmax()
+        top_fail = line_stats["fallas"].idxmax()
+        top_rate = line_stats["tasa_falla"].idxmax()
 
-    st.markdown("**Recomendaciones:**")
+        st.markdown(
+            f"- **Productividad:** {top_prod} presenta "
+            f"la mayor producción acumulada "
+            f"({line_stats.loc[top_prod, 'produccion']:,.0f} unidades) "
+            "en el periodo filtrado."
+        )
 
-    st.write(
-        "1. Priorizar la inspección de la línea con mayor tasa de fallas."
-    )
+        st.markdown(
+            f"- **Eventos de falla:** {top_fail} registra "
+            f"la mayor cantidad de eventos "
+            f"({line_stats.loc[top_fail, 'fallas']:,.0f}); "
+            f"la mayor tasa de registros con falla corresponde "
+            f"a {top_rate} "
+            f"({line_stats.loc[top_rate, 'tasa_falla']:.2f}%)."
+        )
 
-    st.write(
-        "2. Monitorear la producción y los defectos por turno."
-    )
+    shift_prod = f.groupby("turno")["produccion"].sum()
 
-    st.write(
-        "3. Establecer límites de alerta para las variables operativas "
-        "después de validar sus unidades físicas."
-    )
+    if len(shift_prod):
+
+        st.markdown(
+            f"- **Turnos:** el turno con mayor producción "
+            f"acumulada es **{shift_prod.idxmax()}** "
+            f"({shift_prod.max():,.0f} unidades)."
+        )
+
+    st.markdown("**Recomendaciones operativas**")
+
+    st.markdown("""
+    1. Priorizar la revisión de la línea con mayor tasa
+       de fallas y contrastar sus registros con las
+       condiciones operativas.
+
+    2. Hacer seguimiento periódico a producción y
+       defectos por turno para identificar cambios
+       de desempeño.
+
+    3. Definir límites de alerta con el equipo de
+       proceso después de validar las unidades y
+       rangos físicos de temperatura, vibración y presión.
+    """)
+
+    st.markdown("""
+    <p class="note">
+    Los hallazgos cambian con los filtros seleccionados.
+    Las recomendaciones son acciones sugeridas para investigar;
+    no constituyen causalidades demostradas.
+    </p>
+    """, unsafe_allow_html=True)
 
 
 # ==================================================
 # 2. PRODUCCIÓN Y CALIDAD
 # ==================================================
 
-with produccion:
+with tabs[1]:
 
-    st.header("Análisis de producción y calidad")
+    st.subheader("Análisis de producción y calidad")
 
-    col1, col2 = st.columns(2)
+    left, right = st.columns(2)
 
-    with col1:
+    with left:
 
-        por_linea = datos.groupby(
-            "linea", as_index=False
+        p_line = f.groupby(
+            "linea",
+            as_index=False
         )["produccion"].sum()
 
         fig = px.bar(
-            por_linea,
+            p_line,
             x="linea",
             y="produccion",
             color="linea",
-            title="Producción por línea",
+            title="Producción acumulada por línea",
+            color_discrete_sequence=[
+                BLUE, TEAL, ORANGE
+            ],
             text_auto=","
         )
 
-        fig.update_layout(showlegend=False)
+        fig.update_layout(
+            showlegend=False,
+            xaxis_title="",
+            yaxis_title="Unidades"
+        )
 
         st.plotly_chart(
             fig,
             use_container_width=True
         )
 
-    with col2:
+    with right:
 
-        por_turno = datos.groupby(
-            "turno", as_index=False
+        p_shift = f.groupby(
+            "turno",
+            as_index=False
         )["produccion"].sum()
 
+        order = [
+            "Mañana",
+            "Tarde",
+            "Noche"
+        ]
+
+        p_shift["turno"] = pd.Categorical(
+            p_shift["turno"],
+            categories=order,
+            ordered=True
+        )
+
+        p_shift = p_shift.sort_values("turno")
+
         fig = px.bar(
-            por_turno,
+            p_shift,
             x="turno",
             y="produccion",
             color="turno",
             title="Producción por turno",
+            color_discrete_sequence=[
+                BLUE, TEAL, ORANGE
+            ],
             text_auto=","
         )
 
-        fig.update_layout(showlegend=False)
+        fig.update_layout(
+            showlegend=False,
+            xaxis_title="",
+            yaxis_title="Unidades"
+        )
 
         st.plotly_chart(
             fig,
             use_container_width=True
         )
 
-    evolucion = datos.groupby([
-        pd.Grouper(key="timestamp", freq="D"),
-        "linea"
-    ], as_index=False)["produccion"].sum()
+    daily_line = f.groupby(
+        [
+            pd.Grouper(
+                key="timestamp",
+                freq="D"
+            ),
+            "linea"
+        ],
+        as_index=False
+    )["produccion"].sum()
 
     fig = px.line(
-        evolucion,
+        daily_line,
         x="timestamp",
         y="produccion",
         color="linea",
         markers=True,
-        title="Evolución de producción por línea"
+        title="Evolución diaria de producción por línea"
     )
 
     st.plotly_chart(
@@ -377,48 +518,64 @@ with produccion:
 
     st.divider()
 
-    st.subheader("Análisis de calidad")
+    st.markdown("#### Calidad")
 
-    col1, col2 = st.columns(2)
+    c1, c2 = st.columns(2)
 
-    with col1:
+    defects_line = f.groupby(
+        "linea",
+        as_index=False
+    )["defectos"].sum()
 
-        defectos_linea = datos.groupby(
-            "linea", as_index=False
-        )["defectos"].sum()
+    with c1:
 
         fig = px.bar(
-            defectos_linea,
+            defects_line,
             x="linea",
             y="defectos",
             color="linea",
             title="Defectos por línea",
+            color_discrete_sequence=[
+                BLUE, TEAL, ORANGE
+            ],
             text_auto=","
         )
 
-        fig.update_layout(showlegend=False)
+        fig.update_layout(
+            showlegend=False,
+            xaxis_title="",
+            yaxis_title="Unidades defectuosas"
+        )
 
         st.plotly_chart(
             fig,
             use_container_width=True
         )
 
-    with col2:
+    with c2:
 
-        defectos_turno = datos.groupby(
-            "turno", as_index=False
+        defects_shift = f.groupby(
+            "turno",
+            as_index=False
         )["defectos"].sum()
 
         fig = px.bar(
-            defectos_turno,
+            defects_shift,
             x="turno",
             y="defectos",
             color="turno",
             title="Defectos por turno",
+            color_discrete_sequence=[
+                BLUE, TEAL, ORANGE
+            ],
             text_auto=","
         )
 
-        fig.update_layout(showlegend=False)
+        fig.update_layout(
+            showlegend=False,
+            xaxis_title="",
+            yaxis_title="Unidades defectuosas"
+        )
 
         st.plotly_chart(
             fig,
@@ -426,8 +583,14 @@ with produccion:
         )
 
     st.metric(
-        "Porcentaje de defectos",
-        f"{porcentaje_defectos:.2f}%"
+        "Porcentaje de defectos (defectos / producción)",
+        f"{pct_def:.2f}%"
+    )
+
+    st.caption(
+        "El porcentaje se calcula como defectos totales "
+        "divididos entre producción total. No se limita "
+        "a 100%, pues se conserva el cálculo directo."
     )
 
 
@@ -435,38 +598,46 @@ with produccion:
 # 3. VARIABLES OPERATIVAS
 # ==================================================
 
-with variables:
+with tabs[2]:
 
-    st.header("Monitoreo de variables operativas")
+    st.subheader("Monitoreo de variables operativas")
 
-    st.info(
-        "Las unidades físicas de las variables no están "
-        "documentadas en el archivo original."
+    st.caption(
+        "Se muestra el promedio por hora para facilitar "
+        "la lectura de la tendencia temporal."
     )
 
-    datos_hora = datos.set_index(
-        "timestamp"
-    ).groupby("linea")[
-        ["temperatura", "vibracion", "presion"]
-    ].resample("h").mean().reset_index()
+    hourly = (
+        f.set_index("timestamp")
+        .groupby("linea")[
+            [
+                "temperatura",
+                "vibracion",
+                "presion"
+            ]
+        ]
+        .resample("h")
+        .mean()
+        .reset_index()
+    )
 
-    variables_operativas = [
+    variables = [
         ("temperatura", "Temperatura"),
         ("vibracion", "Vibración"),
         ("presion", "Presión")
     ]
 
-    for variable, nombre in variables_operativas:
+    for variable, label in variables:
 
         fig = px.line(
-            datos_hora,
+            hourly,
             x="timestamp",
             y=variable,
             color="linea",
-            title=f"{nombre} promedio por hora",
+            title=f"{label} promedio por hora",
             labels={
                 "timestamp": "Fecha y hora",
-                variable: nombre,
+                variable: label,
                 "linea": "Línea"
             }
         )
@@ -476,75 +647,106 @@ with variables:
             use_container_width=True
         )
 
+    st.info(
+        "El archivo no documenta las unidades físicas "
+        "de estas variables. Por ello, el dashboard "
+        "conserva los valores originales sin asignar "
+        "°C, bar, mm/s u otras unidades."
+    )
+
 
 # ==================================================
 # 4. ANÁLISIS DE FALLAS
 # ==================================================
 
-with fallas:
+with tabs[3]:
 
-    st.header("Análisis de fallas")
+    st.subheader("Análisis de fallas")
 
-    col1, col2 = st.columns(2)
+    c1, c2 = st.columns(2)
 
-    fallas_linea = datos.groupby(
-        "linea"
+    fail_line = f.groupby(
+        "linea",
+        as_index=False
     ).agg(
-        fallas=("falla", "sum"),
-        registros=("falla", "size")
-    ).reset_index()
-
-    fallas_linea["porcentaje"] = (
-        fallas_linea["fallas"] /
-        fallas_linea["registros"] * 100
+        registros_falla=("falla", "sum"),
+        total_registros=("falla", "size")
     )
 
-    with col1:
+    fail_line["porcentaje_falla"] = (
+        fail_line["registros_falla"]
+        / fail_line["total_registros"] * 100
+    )
+
+    with c1:
 
         fig = px.bar(
-            fallas_linea,
+            fail_line,
             x="linea",
-            y="fallas",
+            y="registros_falla",
             color="linea",
-            title="Registros con falla por línea",
-            text_auto=","
+            text_auto=",",
+            title="Cantidad de registros con falla por línea",
+            color_discrete_sequence=[
+                BLUE, TEAL, ORANGE
+            ]
         )
 
-        fig.update_layout(showlegend=False)
+        fig.update_layout(
+            showlegend=False,
+            xaxis_title="",
+            yaxis_title="Registros con falla"
+        )
 
         st.plotly_chart(
             fig,
             use_container_width=True
         )
 
-    with col2:
+    with c2:
 
         fig = px.bar(
-            fallas_linea,
+            fail_line,
             x="linea",
-            y="porcentaje",
+            y="porcentaje_falla",
             color="linea",
-            title="Porcentaje de fallas por línea",
-            text_auto=".2f"
+            text_auto=".2f",
+            title="Porcentaje de registros con falla por línea",
+            color_discrete_sequence=[
+                BLUE, TEAL, ORANGE
+            ]
         )
 
-        fig.update_layout(showlegend=False)
+        fig.update_layout(
+            showlegend=False,
+            xaxis_title="",
+            yaxis_title="Porcentaje (%)"
+        )
 
         st.plotly_chart(
             fig,
             use_container_width=True
         )
 
-    fallas_dia = datos.groupby(
-        pd.Grouper(key="timestamp", freq="D")
-    )["falla"].sum().reset_index()
+    fail_daily = f.groupby(
+        pd.Grouper(
+            key="timestamp",
+            freq="D"
+        ),
+        as_index=False
+    )["falla"].sum()
 
     fig = px.line(
-        fallas_dia,
+        fail_daily,
         x="timestamp",
         y="falla",
         markers=True,
-        title="Evolución diaria de fallas"
+        title="Evolución diaria de registros con falla"
+    )
+
+    fig.update_layout(
+        xaxis_title="Fecha",
+        yaxis_title="Registros con falla"
     )
 
     st.plotly_chart(
@@ -552,22 +754,39 @@ with fallas:
         use_container_width=True
     )
 
-    st.subheader(
-        "Relación entre variables operativas y fallas"
+    st.markdown(
+        "#### Relación entre variables operativas y fallas"
     )
 
     variable = st.selectbox(
-        "Selecciona una variable",
-        ["temperatura", "vibracion", "presion"]
+        "Variable operativa para explorar",
+        [
+            "temperatura",
+            "vibracion",
+            "presion"
+        ],
+        format_func=lambda x: {
+            "temperatura": "Temperatura",
+            "vibracion": "Vibración",
+            "presion": "Presión"
+        }[x]
     )
 
     fig = px.box(
-        datos,
+        f,
         x="falla",
         y=variable,
         color="falla",
         points="outliers",
-        title=f"{variable.capitalize()} según registro de falla"
+        labels={
+            "falla": "Registro con falla (0 = No, 1 = Sí)",
+            variable: variable.capitalize()
+        },
+        title=f"Distribución de {variable} según registro de falla",
+        color_discrete_sequence=[
+            BLUE,
+            RED
+        ]
     )
 
     st.plotly_chart(
@@ -575,39 +794,51 @@ with fallas:
         use_container_width=True
     )
 
-    correlacion = datos[
+    corr = f[
         [variable, "falla"]
-    ].corr().iloc[0, 1]
-
-    st.write(
-        f"Correlación de Pearson: {correlacion:.3f}"
-    )
+    ].corr(
+        numeric_only=True
+    ).iloc[0, 1]
 
     st.caption(
-        "La correlación es descriptiva y no demuestra causalidad."
+        f"Correlación lineal de Pearson entre "
+        f"{variable} y falla en el subconjunto filtrado: "
+        f"{corr:.3f}. Es una asociación descriptiva "
+        "y no demuestra causalidad."
     )
 
 
 # ==================================================
-# TABLA DE DATOS Y DESCARGA
+# TABLA Y DESCARGA DE DATOS
 # ==================================================
 
 st.divider()
 
-st.header("Consulta de registros")
+st.subheader("Consulta y descarga de registros")
+
+st.caption(
+    "La tabla y el archivo descargable respetan "
+    "los filtros globales."
+)
 
 st.dataframe(
-    datos,
+    f.drop(
+        columns=["fecha_hora", "fecha"],
+        errors="ignore"
+    ),
     use_container_width=True,
     hide_index=True
 )
 
-csv = datos.to_csv(
+csv = f.drop(
+    columns=["fecha_hora", "fecha"],
+    errors="ignore"
+).to_csv(
     index=False
 ).encode("utf-8-sig")
 
 st.download_button(
-    label="⬇️ Descargar datos filtrados (CSV)",
+    "⬇️ Descargar datos filtrados (CSV)",
     data=csv,
     file_name="datos_industriales_filtrados.csv",
     mime="text/csv"
@@ -615,32 +846,32 @@ st.download_button(
 
 
 # ==================================================
-# INFORMACIÓN DE CALIDAD DE DATOS
+# CALIDAD DE LOS DATOS
 # ==================================================
 
-with st.expander("Información y calidad de los datos"):
+with st.expander("Calidad y estructura de los datos"):
 
-    col1, col2, col3 = st.columns(3)
+    q1, q2, q3 = st.columns(3)
 
-    col1.metric(
-        "Registros",
+    q1.metric(
+        "Registros cargados",
         f"{len(df):,}"
     )
 
-    col2.metric(
+    q2.metric(
         "Valores faltantes",
-        f"{df.isna().sum().sum():,}"
+        f"{int(df.isna().sum().sum()):,}"
     )
 
-    col3.metric(
+    q3.metric(
         "Filas duplicadas",
-        f"{df.duplicated().sum():,}"
+        f"{int(df.duplicated().sum()):,}"
     )
 
     st.write("Tipos de datos:")
 
     st.dataframe(
-        df.dtypes.astype(str).to_frame("Tipo"),
+        df.dtypes.astype(str).rename("tipo").to_frame(),
         use_container_width=True
     )
 
@@ -652,7 +883,18 @@ with st.expander("Información y calidad de los datos"):
     )
 
 
-st.caption(
-    "OILRED | Proyecto Integrador – Digitalización de Plantas Productivas"
-)
+# --------------------------------------------------
+# PIE DE PÁGINA
+# --------------------------------------------------
 
+st.markdown("""
+<p class="note">
+Fuente: dataset_planta_bigdata.csv suministrado
+para el Proyecto Integrador.
+<br>
+Herramientas: Python, Pandas, Streamlit y Plotly.
+</p>
+""", unsafe_allow_html=True)
+
+
+   
