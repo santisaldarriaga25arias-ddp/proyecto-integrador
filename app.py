@@ -22,6 +22,15 @@ st.markdown("""
     border-radius: 12px;
     padding: 14px 18px;
 }
+[data-testid="stMetric"] { transition: transform .2s, box-shadow .2s; animation: fadein .8s ease; }
+[data-testid="stMetric"]:hover { transform: translateY(-4px); box-shadow: 0 8px 22px rgba(28,187,196,.35); }
+@keyframes fadein { from {opacity:0; transform: translateY(12px);} to {opacity:1; transform:none;} }
+@keyframes shine { 0% {background-position: 0% 50%;} 50% {background-position: 100% 50%;} 100% {background-position: 0% 50%;} }
+.hero { background: linear-gradient(120deg,#1CBBC4,#4FD190,#FFB762,#FF9459); background-size: 300% 300%;
+        animation: shine 12s ease infinite; border-radius: 18px; padding: 22px 28px; color: #fff; margin-bottom: 14px; }
+.hero p { margin: 0 0 10px 0; font-size: 1.05rem; text-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.chip { display:inline-block; background: rgba(255,255,255,.25); border-radius: 20px; padding: 4px 14px;
+        margin: 3px 6px 3px 0; font-size: .9rem; font-weight: 600; }
 [data-testid="stMetricValue"] { font-weight: 700; }
 button[data-baseweb="tab"] { font-weight: 600; }
 h1 { background: linear-gradient(90deg, #1CBBC4, #4FD190, #FFB762, #FF9459);
@@ -105,24 +114,29 @@ for nombre in INTEGRANTES:
     st.sidebar.markdown(f"- {nombre}")
 
 st.title("🏭 Dashboard de monitoreo – Planta de producción")
-st.caption("Ingenieros encargados: " + " · ".join(INTEGRANTES))
+chips = "".join(f'<span class="chip">👷 {n}</span>' for n in INTEGRANTES)
+datos = "".join(f'<span class="chip">{t}</span>' for t in
+                [f"📅 {f_min} → {f_max}", f"🧾 {len(df):,} registros", "🏭 3 líneas", "⏱️ 3 turnos"])
 st.markdown(
-    "Aplicación para supervisar el desempeño de las tres líneas de producción: "
-    "productividad, calidad, variables operativas y fallas, a partir de 30 días de "
-    "registros históricos (1 registro por minuto por línea)."
-)
-st.caption(
-    "⚠️ El dataset no documenta las unidades de temperatura, vibración, presión ni del intervalo "
-    "de producción; por eso se muestran sin unidades. Las gráficas se agregan según la "
-    f"granularidad elegida (actual: {gran_label.lower()})."
-)
+    '<div class="hero"><p>Supervisa productividad, calidad, variables operativas y fallas de la planta '
+    "en un solo lugar: filtra, explora y descubre dónde actuar.</p>"
+    f"{datos}<br>{chips}</div>", unsafe_allow_html=True)
+
+with st.expander("ℹ️ Notas sobre los datos"):
+    st.markdown(
+        "- **Unidades:** el dataset no documenta las unidades de temperatura, vibración, presión "
+        "ni del intervalo de producción, por eso se muestran sin unidades.\n"
+        f"- **Agregación:** los datos son de 1 registro por minuto; las gráficas se agrupan por "
+        f"**{gran_label.lower()}** (cámbialo en la barra lateral)."
+    )
 
 if dff.empty:
     st.warning("No hay registros con los filtros seleccionados. Ajusta los filtros.")
     st.stop()
 
 tabs = st.tabs(["📊 Resumen general", "🏗️ Producción y calidad", "🌡️ Variables operativas",
-                "🚨 Análisis de fallas", "🗂️ Datos", "💡 Hallazgos y recomendaciones"])
+                "🚨 Análisis de fallas", "🧠 Análisis avanzado", "🗂️ Datos",
+                "💡 Hallazgos y recomendaciones"])
 
 # ---------------------------------------------------------- 1. Resumen
 with tabs[0]:
@@ -181,6 +195,15 @@ with tabs[1]:
     st.plotly_chart(px.line(p_t, x="timestamp", y="produccion", color="linea", color_discrete_map=LINEA_COLORS,
                             title=f"Evolución de la producción ({gran_label.lower()})",
                             labels={"timestamp": "Fecha", "produccion": "Unidades"}))
+
+    acum = (dff.assign(dia=dff["timestamp"].dt.strftime("%Y-%m-%d"))
+            .groupby(["dia", "linea"])["produccion"].sum().unstack(fill_value=0).cumsum()
+            .stack().rename("acumulado").reset_index())
+    st.plotly_chart(px.bar(acum, x="linea", y="acumulado", color="linea", animation_frame="dia",
+                           color_discrete_map=LINEA_COLORS, text_auto=True,
+                           range_y=[0, acum["acumulado"].max() * 1.1],
+                           title="🏁 Carrera de producción acumulada día a día (pulsa ▶)",
+                           labels={"linea": "Línea", "acumulado": "Unidades acumuladas"}))
 
     hh = (dff.assign(hora=dff["timestamp"].dt.hour)
           .groupby(["hora", "turno"], observed=True)["produccion"].mean().reset_index())
@@ -272,8 +295,105 @@ with tabs[3]:
         c2.info("No hay suficientes datos para calcular quintiles.")
     st.caption("Esta relación es una asociación observada en los datos, no prueba causalidad.")
 
-# ------------------------------------------------------ 5. Datos
+# ------------------------------------------------ 5. Análisis avanzado
 with tabs[4]:
+    st.subheader("🧠 Análisis avanzado")
+    st.caption("Herramientas extra de supervisión. Respetan los filtros de la barra lateral.")
+
+    # --- Índice de salud
+    st.markdown("### 🩺 Índice de salud por línea")
+    gl = dff.groupby("linea").agg(prod=("produccion", "sum"), d=("defectos", "sum"),
+                                  f=("falla", "mean"), vstd=("vibracion", "std"),
+                                  tstd=("temperatura", "std"))
+    gl["pdef"] = gl["d"] / gl["prod"]
+
+    def inv(x):  # menor es mejor: la mejor línea obtiene 100
+        return (x.min() / x * 100).replace([float("inf")], 100).fillna(100)
+
+    sc = pd.DataFrame({"Productividad": gl["prod"] / gl["prod"].max() * 100,
+                       "Calidad": inv(gl["pdef"]), "Confiabilidad": inv(gl["f"]),
+                       "Estab. vibración": inv(gl["vstd"]),
+                       "Estab. temperatura": inv(gl["tstd"])}).fillna(100)
+    cats = list(sc.columns)
+    sc["Índice"] = sc[cats].mean(axis=1)
+    radar = go.Figure()
+    for ln in sc.index:
+        vals = sc.loc[ln, cats].tolist()
+        radar.add_trace(go.Scatterpolar(r=vals + vals[:1], theta=cats + cats[:1], fill="toself",
+                                        name=ln, line_color=LINEA_COLORS.get(ln), opacity=0.6))
+    radar.update_layout(polar=dict(radialaxis=dict(range=[0, 100])),
+                        title="Radar de desempeño (100 = mejor línea)")
+    c1, c2 = st.columns([3, 2])
+    c1.plotly_chart(radar)
+    for ln, val in sc["Índice"].sort_values(ascending=False).items():
+        c2.metric(f"{ln} – índice de salud", f"{val:.0f} / 100")
+    st.caption("Cada eje se normaliza frente a la mejor línea de la selección; el índice es el "
+               "promedio de los cinco ejes. Es un indicador comparativo propio de este dashboard, "
+               "no un estándar industrial.")
+
+    # --- Anomalías
+    st.markdown("### 🚨 Detector de anomalías")
+    a1, a2 = st.columns(2)
+    var_a = a1.selectbox("Variable a vigilar", list(VARIABLES), format_func=VARIABLES.get,
+                         key="var_anom")
+    zmax = a2.slider("Sensibilidad (desviaciones estándar respecto a la media de su línea)",
+                     2.0, 5.0, 3.0, 0.5)
+    g_a = dff.groupby("linea")[var_a]
+    z = (dff[var_a] - g_a.transform("mean")) / g_a.transform("std")
+    es_an = z.abs() >= zmax
+    an, normal = dff[es_an], dff[~es_an]
+    m = st.columns(3)
+    m[0].metric("Anomalías detectadas", f"{len(an):,}")
+    m[1].metric("% del total", f"{pct(len(an), len(dff)):.2f} %")
+    base_f = dff["falla"].mean() * 100
+    if len(an):
+        tf = an["falla"].mean() * 100
+        m[2].metric("% de esas anomalías con falla", f"{tf:.2f} %",
+                    delta=f"{tf / base_f:.1f}× el promedio" if base_f else None,
+                    delta_color="inverse")
+    pl = pd.concat([normal.sample(min(4000, len(normal)), random_state=1).assign(Tipo="Normal"),
+                    an.sample(min(3000, len(an)), random_state=1).assign(Tipo="Anomalía")])
+    st.plotly_chart(px.scatter(pl, x="timestamp", y=var_a, color="Tipo", opacity=0.7,
+                               color_discrete_map={"Normal": "#1CBBC4", "Anomalía": "#FF9459"},
+                               title=f"Anomalías de {VARIABLES[var_a].lower()} (muestra para fluidez)",
+                               labels={"timestamp": "Fecha", var_a: VARIABLES[var_a]}))
+
+    # --- 3D
+    st.markdown("### 🧊 Mapa 3D de condiciones operativas")
+    fl, ok = dff[dff["falla"] == 1], dff[dff["falla"] == 0]
+    mu = pd.concat([fl.sample(min(1500, len(fl)), random_state=1),
+                    ok.sample(min(2500, len(ok)), random_state=1)])
+    mu = mu.assign(Estado=mu["falla"].map({0: "Sin falla", 1: "Con falla"}))
+    f3 = px.scatter_3d(mu, x="temperatura", y="vibracion", z="presion", color="Estado",
+                       color_discrete_map=ESTADO_COLORS, opacity=0.7,
+                       title="Temperatura × Vibración × Presión (arrastra para rotar)")
+    f3.update_traces(marker_size=3)
+    f3.update_layout(height=560)
+    st.plotly_chart(f3)
+    st.caption("Muestra aleatoria de hasta 4.000 registros (todas las fallas posibles hasta 1.500).")
+
+    # --- Correlación y operarios
+    c1, c2 = st.columns(2)
+    cor = dff[["temperatura", "vibracion", "presion", "produccion", "defectos", "falla"]].corr().round(2)
+    c1.plotly_chart(px.imshow(cor, text_auto=True, zmin=-1, zmax=1, aspect="auto",
+                              color_continuous_scale=["#1CBBC4", "#FFFFFF", "#FF9459"],
+                              title="Matriz de correlación"))
+    op = dff.groupby("operario").agg(prod=("produccion", "mean"), f=("falla", "mean")).reset_index()
+    op["f"] *= 100
+    c2.plotly_chart(px.bar(op, x="operario", y="prod", text_auto=".2f",
+                           color_discrete_sequence=["#4FD190"],
+                           title="Producción promedio por operario",
+                           labels={"prod": "Unidades por registro", "operario": "Operario"}))
+
+    # --- Heatmap día × hora
+    hd = (dff.assign(dia=dff["timestamp"].dt.strftime("%m-%d"), hora=dff["timestamp"].dt.hour)
+          .pivot_table(index="dia", columns="hora", values="falla", aggfunc="sum"))
+    st.plotly_chart(px.imshow(hd, aspect="auto", color_continuous_scale=ESCALA_RIESGO,
+                              title="Mapa de calor de fallas: día × hora del día",
+                              labels={"x": "Hora", "y": "Día", "color": "Fallas"}))
+
+# ------------------------------------------------------ 6. Datos
+with tabs[5]:
     st.subheader("Tabla de datos")
     st.caption(f"{len(dff):,} registros con los filtros aplicados.")
     st.dataframe(dff, height=450)
@@ -282,7 +402,7 @@ with tabs[4]:
                        file_name="datos_filtrados.csv", mime="text/csv")
 
 # --------------------------------------- 6. Hallazgos y recomendaciones
-with tabs[5]:
+with tabs[6]:
     st.subheader("Hallazgos y recomendaciones")
     st.caption("Calculados sobre el periodo completo (30 días, 3 líneas), sin filtros.")
 
