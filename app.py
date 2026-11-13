@@ -30,6 +30,7 @@ h1 { background: linear-gradient(90deg, #1CBBC4, #4FD190, #FFB762, #FF9459);
 """, unsafe_allow_html=True)
 
 DATA_PATH = Path(__file__).parent / "dataset_planta_bigdata.csv"
+INTEGRANTES = ["Isabel Cuadro Bracho", "Paulina Hernández", "Santiago Saldarriaga"]
 ORDEN_TURNOS = ["Mañana", "Tarde", "Noche"]
 GRANULARIDAD = {"15 minutos": "15min", "Hora": "h", "Día": "D"}
 # Paleta "Sandbox": 1CBBC4 (turquesa), 4FD190 (verde), FFB762 (amarillo), FF9459 (naranja)
@@ -98,7 +99,13 @@ mask = (
 )
 dff = df[mask]
 
+st.sidebar.markdown("---")
+st.sidebar.markdown("**👷 Ingenieros encargados**")
+for nombre in INTEGRANTES:
+    st.sidebar.markdown(f"- {nombre}")
+
 st.title("🏭 Dashboard de monitoreo – Planta de producción")
+st.caption("Ingenieros encargados: " + " · ".join(INTEGRANTES))
 st.markdown(
     "Aplicación para supervisar el desempeño de las tres líneas de producción: "
     "productividad, calidad, variables operativas y fallas, a partir de 30 días de "
