@@ -12,9 +12,9 @@ Aplicación web en **Streamlit** para analizar 30 días de operación (01–30 o
 
 ## Integrantes
 
-1. Nombre Apellido
-2. Nombre Apellido
-3. Nombre Apellido
+1. Isabel Cuadro Bracho
+2. Paulina Hernandez
+3. Santiago Saldarriaga
 
 ## Funcionalidades
 
