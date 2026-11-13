@@ -6,6 +6,7 @@ import streamlit as st
 
 try:
     import plotly.express as px
+    import plotly.graph_objects as go
 except ModuleNotFoundError:
     st.error("Falta la dependencia 'plotly'. Verifica que requirements.txt esté en la raíz "
              "del repositorio (junto a app.py), en UTF-8, y reinicia la app.")
@@ -13,9 +14,26 @@ except ModuleNotFoundError:
 
 st.set_page_config(page_title="Dashboard Planta Industrial", page_icon="🏭", layout="wide")
 
+st.markdown("""
+<style>
+[data-testid="stMetric"] {
+    background: rgba(0, 180, 216, 0.10);
+    border-left: 6px solid #00B4D8;
+    border-radius: 12px;
+    padding: 14px 18px;
+}
+[data-testid="stMetricValue"] { font-weight: 700; }
+button[data-baseweb="tab"] { font-weight: 600; }
+</style>
+""", unsafe_allow_html=True)
+
 DATA_PATH = Path(__file__).parent / "dataset_planta_bigdata.csv"
 ORDEN_TURNOS = ["Mañana", "Tarde", "Noche"]
 GRANULARIDAD = {"15 minutos": "15min", "Hora": "h", "Día": "D"}
+LINEA_COLORS = {"Linea 1": "#00B4D8", "Linea 2": "#F77F00", "Linea 3": "#7B2CBF"}
+TURNO_COLORS = {"Mañana": "#FFB703", "Tarde": "#FB5607", "Noche": "#3A0CA3"}
+ESTADO_COLORS = {"Sin falla": "#2A9D8F", "Con falla": "#E63946"}
+C_DEFECTOS, C_FALLA, C_NEUTRO = "#F77F00", "#E63946", "rgba(150,150,150,0.25)"
 VARIABLES = {"temperatura": "Temperatura", "vibracion": "Vibración", "presion": "Presión"}
 
 
@@ -35,6 +53,19 @@ def cargar_datos() -> pd.DataFrame:
 
 def pct(num, den) -> float:
     return (num / den * 100) if den else 0.0
+
+
+def donut(valor: float, titulo: str, color: str) -> go.Figure:
+    """Gráfico circular (dona) para un porcentaje."""
+    v = min(max(valor, 0), 100)
+    fig = go.Figure(go.Pie(values=[v, 100 - v], hole=0.72, sort=False, direction="clockwise",
+                           marker=dict(colors=[color, C_NEUTRO]), textinfo="none",
+                           hoverinfo="skip"))
+    fig.update_layout(title=dict(text=titulo, x=0.5), showlegend=False, height=300,
+                      margin=dict(t=60, b=10, l=10, r=10),
+                      annotations=[dict(text=f"<b>{valor:.2f} %</b>", x=0.5, y=0.5,
+                                        font_size=28, showarrow=False)])
+    return fig
 
 
 df = cargar_datos()
@@ -88,14 +119,14 @@ with tabs[0]:
     prod_tot = int(dff["produccion"].sum())
     def_tot = int(dff["defectos"].sum())
     fallas = int(dff["falla"].sum())
-    c = st.columns(3)
+    c = st.columns(4)
     c[0].metric("Producción total", f"{prod_tot:,}")
     c[1].metric("Producción promedio por registro", f"{dff['produccion'].mean():.2f}")
     c[2].metric("Defectos totales", f"{def_tot:,}")
-    c = st.columns(3)
-    c[0].metric("Porcentaje de defectos", f"{pct(def_tot, prod_tot):.2f} %")
-    c[1].metric("Registros con falla", f"{fallas:,}")
-    c[2].metric("% de registros con falla", f"{pct(fallas, len(dff)):.2f} %")
+    c[3].metric("Registros con falla", f"{fallas:,}")
+    c = st.columns(2)
+    c[0].plotly_chart(donut(pct(def_tot, prod_tot), "Porcentaje de defectos", C_DEFECTOS))
+    c[1].plotly_chart(donut(pct(fallas, len(dff)), "% de registros con falla", C_FALLA))
     st.caption(f"{len(dff):,} registros entre {ini} y {fin}.")
 
     res = dff.groupby("linea", observed=True).agg(
@@ -111,11 +142,11 @@ with tabs[1]:
     st.subheader("Producción")
     c1, c2 = st.columns(2)
     p_linea = dff.groupby("linea", observed=True)["produccion"].sum().reset_index()
-    c1.plotly_chart(px.bar(p_linea, x="linea", y="produccion", color="linea", text_auto=True,
+    c1.plotly_chart(px.bar(p_linea, x="linea", y="produccion", color="linea", color_discrete_map=LINEA_COLORS, text_auto=True,
                            title="Producción acumulada por línea",
                            labels={"linea": "Línea", "produccion": "Unidades"}))
     p_turno = dff.groupby("turno", observed=True)["produccion"].agg(["sum", "mean"]).reset_index()
-    c2.plotly_chart(px.bar(p_turno, x="turno", y="sum", color="turno", text_auto=True,
+    c2.plotly_chart(px.bar(p_turno, x="turno", y="sum", color="turno", color_discrete_map=TURNO_COLORS, text_auto=True,
                            title="Producción acumulada por turno",
                            labels={"turno": "Turno", "sum": "Unidades"},
                            category_orders={"turno": ORDEN_TURNOS}))
@@ -124,7 +155,7 @@ with tabs[1]:
 
     p_t = (dff.groupby([pd.Grouper(key="timestamp", freq=freq), "linea"], observed=True)
            ["produccion"].sum().reset_index())
-    st.plotly_chart(px.line(p_t, x="timestamp", y="produccion", color="linea",
+    st.plotly_chart(px.line(p_t, x="timestamp", y="produccion", color="linea", color_discrete_map=LINEA_COLORS,
                             title=f"Evolución de la producción ({gran_label.lower()})",
                             labels={"timestamp": "Fecha", "produccion": "Unidades"}))
 
@@ -133,15 +164,15 @@ with tabs[1]:
     d_linea = dff.groupby("linea", observed=True).agg(
         defectos=("defectos", "sum"), produccion=("produccion", "sum")).reset_index()
     d_linea["pct"] = d_linea["defectos"] / d_linea["produccion"] * 100
-    c1.plotly_chart(px.bar(d_linea, x="linea", y="defectos", color="linea", text_auto=True,
+    c1.plotly_chart(px.bar(d_linea, x="linea", y="defectos", color="linea", color_discrete_map=LINEA_COLORS, text_auto=True,
                            title="Defectos por línea"))
-    c2.plotly_chart(px.bar(d_linea, x="linea", y="pct", color="linea", text_auto=".2f",
+    c2.plotly_chart(px.bar(d_linea, x="linea", y="pct", color="linea", color_discrete_map=LINEA_COLORS, text_auto=".2f",
                            title="% de defectos por línea",
                            labels={"pct": "% defectos / producción"}))
     d_turno = dff.groupby("turno", observed=True).agg(
         defectos=("defectos", "sum"), produccion=("produccion", "sum")).reset_index()
     d_turno["pct"] = d_turno["defectos"] / d_turno["produccion"] * 100
-    c3.plotly_chart(px.bar(d_turno, x="turno", y="defectos", color="turno", text_auto=True,
+    c3.plotly_chart(px.bar(d_turno, x="turno", y="defectos", color="turno", color_discrete_map=TURNO_COLORS, text_auto=True,
                            title="Defectos por turno",
                            category_orders={"turno": ORDEN_TURNOS}))
     st.caption("% de defectos por turno: " +
@@ -159,7 +190,7 @@ with tabs[2]:
     for col, nombre in VARIABLES.items():
         v = (dff.groupby([pd.Grouper(key="timestamp", freq=freq), "linea"], observed=True)[col]
              .mean().reset_index())
-        fig = px.line(v, x="timestamp", y=col, color="linea",
+        fig = px.line(v, x="timestamp", y=col, color="linea", color_discrete_map=LINEA_COLORS,
                       title=f"{nombre} ({gran_label.lower()}, promedio)",
                       labels={"timestamp": "Fecha", col: nombre})
         fig.add_hline(y=dff[col].mean(), line_dash="dot", annotation_text="promedio")
@@ -174,14 +205,14 @@ with tabs[3]:
         fallas=("falla", "sum"), registros=("falla", "size")).reset_index()
     f_linea["pct"] = f_linea["fallas"] / f_linea["registros"] * 100
     c1, c2 = st.columns(2)
-    c1.plotly_chart(px.bar(f_linea, x="linea", y="fallas", color="linea", text_auto=True,
+    c1.plotly_chart(px.bar(f_linea, x="linea", y="fallas", color="linea", color_discrete_map=LINEA_COLORS, text_auto=True,
                            title="Registros con falla por línea"))
-    c2.plotly_chart(px.bar(f_linea, x="linea", y="pct", color="linea", text_auto=".2f",
+    c2.plotly_chart(px.bar(f_linea, x="linea", y="pct", color="linea", color_discrete_map=LINEA_COLORS, text_auto=".2f",
                            title="% de registros con falla por línea",
                            labels={"pct": "% registros con falla"}))
     f_t = (dff.groupby([pd.Grouper(key="timestamp", freq=freq), "linea"], observed=True)
            ["falla"].sum().reset_index())
-    st.plotly_chart(px.line(f_t, x="timestamp", y="falla", color="linea",
+    st.plotly_chart(px.line(f_t, x="timestamp", y="falla", color="linea", color_discrete_map=LINEA_COLORS,
                             title=f"Evolución de registros con falla ({gran_label.lower()})",
                             labels={"timestamp": "Fecha", "falla": "Registros con falla"}))
 
@@ -189,7 +220,7 @@ with tabs[3]:
     var = st.selectbox("Variable operativa", list(VARIABLES), format_func=VARIABLES.get)
     c1, c2 = st.columns(2)
     tmp = dff.assign(Estado=dff["falla"].map({0: "Sin falla", 1: "Con falla"}))
-    c1.plotly_chart(px.box(tmp, x="Estado", y=var, color="Estado",
+    c1.plotly_chart(px.box(tmp, x="Estado", y=var, color="Estado", color_discrete_map=ESTADO_COLORS,
                            title=f"{VARIABLES[var]} según estado de falla",
                            labels={var: VARIABLES[var]}))
     try:
@@ -197,6 +228,7 @@ with tabs[3]:
         tasa = tmp.groupby("rango", observed=True)["falla"].mean().mul(100).reset_index()
         tasa["rango"] = tasa["rango"].astype(str)
         c2.plotly_chart(px.bar(tasa, x="rango", y="falla", text_auto=".2f",
+                               color_discrete_sequence=[C_FALLA],
                                title=f"% de fallas por quintil de {VARIABLES[var].lower()}",
                                labels={"rango": "Rango (quintiles)", "falla": "% con falla"}))
     except ValueError:
