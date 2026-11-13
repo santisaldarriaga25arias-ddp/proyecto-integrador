@@ -17,23 +17,27 @@ st.set_page_config(page_title="Dashboard Planta Industrial", page_icon="🏭", l
 st.markdown("""
 <style>
 [data-testid="stMetric"] {
-    background: rgba(0, 180, 216, 0.10);
-    border-left: 6px solid #00B4D8;
+    background: rgba(28, 187, 196, 0.12);
+    border-left: 6px solid #1CBBC4;
     border-radius: 12px;
     padding: 14px 18px;
 }
 [data-testid="stMetricValue"] { font-weight: 700; }
 button[data-baseweb="tab"] { font-weight: 600; }
+h1 { background: linear-gradient(90deg, #1CBBC4, #4FD190, #FFB762, #FF9459);
+     -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 </style>
 """, unsafe_allow_html=True)
 
 DATA_PATH = Path(__file__).parent / "dataset_planta_bigdata.csv"
 ORDEN_TURNOS = ["Mañana", "Tarde", "Noche"]
 GRANULARIDAD = {"15 minutos": "15min", "Hora": "h", "Día": "D"}
-LINEA_COLORS = {"Linea 1": "#00B4D8", "Linea 2": "#F77F00", "Linea 3": "#7B2CBF"}
-TURNO_COLORS = {"Mañana": "#FFB703", "Tarde": "#FB5607", "Noche": "#3A0CA3"}
-ESTADO_COLORS = {"Sin falla": "#2A9D8F", "Con falla": "#E63946"}
-C_DEFECTOS, C_FALLA, C_NEUTRO = "#F77F00", "#E63946", "rgba(150,150,150,0.25)"
+# Paleta "Sandbox": 1CBBC4 (turquesa), 4FD190 (verde), FFB762 (amarillo), FF9459 (naranja)
+LINEA_COLORS = {"Linea 1": "#1CBBC4", "Linea 2": "#4FD190", "Linea 3": "#FFB762"}
+TURNO_COLORS = {"Mañana": "#FFB762", "Tarde": "#FF9459", "Noche": "#1CBBC4"}
+ESTADO_COLORS = {"Sin falla": "#4FD190", "Con falla": "#FF9459"}
+C_DEFECTOS, C_FALLA, C_NEUTRO = "#FFB762", "#FF9459", "rgba(150,150,150,0.25)"
+ESCALA_RIESGO = [[0, "#4FD190"], [0.5, "#FFB762"], [1, "#FF9459"]]
 VARIABLES = {"temperatura": "Temperatura", "vibracion": "Vibración", "presion": "Presión"}
 
 
@@ -127,6 +131,18 @@ with tabs[0]:
     c = st.columns(2)
     c[0].plotly_chart(donut(pct(def_tot, prod_tot), "Porcentaje de defectos", C_DEFECTOS))
     c[1].plotly_chart(donut(pct(fallas, len(dff)), "% de registros con falla", C_FALLA))
+    base = df["falla"].mean() * 100          # referencia: toda la planta, todo el periodo
+    actual = pct(fallas, len(dff))
+    ratio = actual / base if base else 0
+    msg = (f"{actual:.2f} % de registros con falla en la selección "
+           f"(referencia, planta completa: {base:.2f} %).")
+    if ratio <= 1.0:
+        st.success(f"🟢 **Operación normal.** {msg}")
+    elif ratio <= 1.5:
+        st.warning(f"🟡 **Atención.** {msg}")
+    else:
+        st.error(f"🔴 **Crítico.** {msg}")
+    st.caption("Semáforo: verde si la tasa de falla ≤ referencia, amarillo hasta 1,5 veces, rojo por encima.")
     st.caption(f"{len(dff):,} registros entre {ini} y {fin}.")
 
     res = dff.groupby("linea", observed=True).agg(
@@ -158,6 +174,13 @@ with tabs[1]:
     st.plotly_chart(px.line(p_t, x="timestamp", y="produccion", color="linea", color_discrete_map=LINEA_COLORS,
                             title=f"Evolución de la producción ({gran_label.lower()})",
                             labels={"timestamp": "Fecha", "produccion": "Unidades"}))
+
+    hh = (dff.assign(hora=dff["timestamp"].dt.hour)
+          .groupby(["hora", "turno"], observed=True)["produccion"].mean().reset_index())
+    st.plotly_chart(px.line(hh, x="hora", y="produccion", color="turno", markers=True,
+                            color_discrete_map=TURNO_COLORS,
+                            title="Producción promedio por hora del día (se aprecian los turnos)",
+                            labels={"hora": "Hora del día", "produccion": "Unidades por registro"}))
 
     st.subheader("Calidad")
     c1, c2, c3 = st.columns(3)
@@ -215,6 +238,13 @@ with tabs[3]:
     st.plotly_chart(px.line(f_t, x="timestamp", y="falla", color="linea", color_discrete_map=LINEA_COLORS,
                             title=f"Evolución de registros con falla ({gran_label.lower()})",
                             labels={"timestamp": "Fecha", "falla": "Registros con falla"}))
+
+    hm = (dff.groupby(["linea", "turno"], observed=True)["falla"].mean().mul(100)
+          .reset_index().pivot(index="linea", columns="turno", values="falla"))
+    hm = hm.reindex(columns=[t for t in ORDEN_TURNOS if t in hm.columns])
+    st.plotly_chart(px.imshow(hm, text_auto=".2f", color_continuous_scale=ESCALA_RIESGO,
+                              aspect="auto", title="Mapa de calor: % de registros con falla (línea × turno)",
+                              labels={"color": "% falla", "x": "Turno", "y": "Línea"}))
 
     st.markdown("**Relación entre variables operativas y fallas**")
     var = st.selectbox("Variable operativa", list(VARIABLES), format_func=VARIABLES.get)
