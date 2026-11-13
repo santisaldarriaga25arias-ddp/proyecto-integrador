@@ -2,12 +2,18 @@
 from pathlib import Path
 
 import pandas as pd
-import plotly.express as px
 import streamlit as st
+
+try:
+    import plotly.express as px
+except ModuleNotFoundError:
+    st.error("Falta la dependencia 'plotly'. Verifica que requirements.txt esté en la raíz "
+             "del repositorio (junto a app.py), en UTF-8, y reinicia la app.")
+    st.stop()
 
 st.set_page_config(page_title="Dashboard Planta Industrial", page_icon="🏭", layout="wide")
 
-DATA_PATH = Path(__file__).parent / "data" / "dataset_planta_bigdata.csv"
+DATA_PATH = Path(__file__).parent / "dataset_planta_bigdata.csv"
 ORDEN_TURNOS = ["Mañana", "Tarde", "Noche"]
 GRANULARIDAD = {"15 minutos": "15min", "Hora": "h", "Día": "D"}
 VARIABLES = {"temperatura": "Temperatura", "vibracion": "Vibración", "presion": "Presión"}
@@ -16,6 +22,10 @@ VARIABLES = {"temperatura": "Temperatura", "vibracion": "Vibración", "presion":
 # ------------------------------------------------------------------ datos
 @st.cache_data
 def cargar_datos() -> pd.DataFrame:
+    if not DATA_PATH.exists():
+        st.error(f"No se encontró el archivo {DATA_PATH.name} en la raíz del repositorio. "
+                 "Verifica que esté subido junto a app.py.")
+        st.stop()
     df = pd.read_csv(DATA_PATH, parse_dates=["timestamp"])
     df = df.drop_duplicates()
     df["linea"] = df["linea"].str.replace("_", " ")
@@ -94,7 +104,7 @@ with tabs[0]:
     res["% defectos"] = (res["Defectos"] / res["Producción"] * 100).round(2)
     res["% fallas"] = (res["Fallas"] / res["Registros"] * 100).round(2)
     st.markdown("**Comparativo por línea**")
-    st.dataframe(res, use_container_width=True)
+    st.dataframe(res)
 
 # --------------------------------------------- 2. Producción y calidad
 with tabs[1]:
@@ -103,14 +113,12 @@ with tabs[1]:
     p_linea = dff.groupby("linea", observed=True)["produccion"].sum().reset_index()
     c1.plotly_chart(px.bar(p_linea, x="linea", y="produccion", color="linea", text_auto=True,
                            title="Producción acumulada por línea",
-                           labels={"linea": "Línea", "produccion": "Unidades"}),
-                    use_container_width=True)
+                           labels={"linea": "Línea", "produccion": "Unidades"}))
     p_turno = dff.groupby("turno", observed=True)["produccion"].agg(["sum", "mean"]).reset_index()
     c2.plotly_chart(px.bar(p_turno, x="turno", y="sum", color="turno", text_auto=True,
                            title="Producción acumulada por turno",
                            labels={"turno": "Turno", "sum": "Unidades"},
-                           category_orders={"turno": ORDEN_TURNOS}),
-                    use_container_width=True)
+                           category_orders={"turno": ORDEN_TURNOS}))
     st.caption("Producción promedio por registro en cada turno: " +
                " | ".join(f"{r.turno}: {r['mean']:.2f}" for _, r in p_turno.iterrows()))
 
@@ -118,8 +126,7 @@ with tabs[1]:
            ["produccion"].sum().reset_index())
     st.plotly_chart(px.line(p_t, x="timestamp", y="produccion", color="linea",
                             title=f"Evolución de la producción ({gran_label.lower()})",
-                            labels={"timestamp": "Fecha", "produccion": "Unidades"}),
-                    use_container_width=True)
+                            labels={"timestamp": "Fecha", "produccion": "Unidades"}))
 
     st.subheader("Calidad")
     c1, c2, c3 = st.columns(3)
@@ -127,16 +134,16 @@ with tabs[1]:
         defectos=("defectos", "sum"), produccion=("produccion", "sum")).reset_index()
     d_linea["pct"] = d_linea["defectos"] / d_linea["produccion"] * 100
     c1.plotly_chart(px.bar(d_linea, x="linea", y="defectos", color="linea", text_auto=True,
-                           title="Defectos por línea"), use_container_width=True)
+                           title="Defectos por línea"))
     c2.plotly_chart(px.bar(d_linea, x="linea", y="pct", color="linea", text_auto=".2f",
                            title="% de defectos por línea",
-                           labels={"pct": "% defectos / producción"}), use_container_width=True)
+                           labels={"pct": "% defectos / producción"}))
     d_turno = dff.groupby("turno", observed=True).agg(
         defectos=("defectos", "sum"), produccion=("produccion", "sum")).reset_index()
     d_turno["pct"] = d_turno["defectos"] / d_turno["produccion"] * 100
     c3.plotly_chart(px.bar(d_turno, x="turno", y="defectos", color="turno", text_auto=True,
                            title="Defectos por turno",
-                           category_orders={"turno": ORDEN_TURNOS}), use_container_width=True)
+                           category_orders={"turno": ORDEN_TURNOS}))
     st.caption("% de defectos por turno: " +
                " | ".join(f"{r.turno}: {r.pct:.2f} %" for _, r in d_turno.iterrows()))
     n_inc = int((dff["defectos"] > dff["produccion"]).sum())
@@ -156,9 +163,9 @@ with tabs[2]:
                       title=f"{nombre} ({gran_label.lower()}, promedio)",
                       labels={"timestamp": "Fecha", col: nombre})
         fig.add_hline(y=dff[col].mean(), line_dash="dot", annotation_text="promedio")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
     st.markdown("**Estadísticas descriptivas (selección actual)**")
-    st.dataframe(dff[list(VARIABLES)].describe().T.round(2), use_container_width=True)
+    st.dataframe(dff[list(VARIABLES)].describe().T.round(2))
 
 # --------------------------------------------------- 4. Fallas
 with tabs[3]:
@@ -168,16 +175,15 @@ with tabs[3]:
     f_linea["pct"] = f_linea["fallas"] / f_linea["registros"] * 100
     c1, c2 = st.columns(2)
     c1.plotly_chart(px.bar(f_linea, x="linea", y="fallas", color="linea", text_auto=True,
-                           title="Registros con falla por línea"), use_container_width=True)
+                           title="Registros con falla por línea"))
     c2.plotly_chart(px.bar(f_linea, x="linea", y="pct", color="linea", text_auto=".2f",
                            title="% de registros con falla por línea",
-                           labels={"pct": "% registros con falla"}), use_container_width=True)
+                           labels={"pct": "% registros con falla"}))
     f_t = (dff.groupby([pd.Grouper(key="timestamp", freq=freq), "linea"], observed=True)
            ["falla"].sum().reset_index())
     st.plotly_chart(px.line(f_t, x="timestamp", y="falla", color="linea",
                             title=f"Evolución de registros con falla ({gran_label.lower()})",
-                            labels={"timestamp": "Fecha", "falla": "Registros con falla"}),
-                    use_container_width=True)
+                            labels={"timestamp": "Fecha", "falla": "Registros con falla"}))
 
     st.markdown("**Relación entre variables operativas y fallas**")
     var = st.selectbox("Variable operativa", list(VARIABLES), format_func=VARIABLES.get)
@@ -185,15 +191,14 @@ with tabs[3]:
     tmp = dff.assign(Estado=dff["falla"].map({0: "Sin falla", 1: "Con falla"}))
     c1.plotly_chart(px.box(tmp, x="Estado", y=var, color="Estado",
                            title=f"{VARIABLES[var]} según estado de falla",
-                           labels={var: VARIABLES[var]}), use_container_width=True)
+                           labels={var: VARIABLES[var]}))
     try:
         tmp["rango"] = pd.qcut(dff[var], 5, duplicates="drop")
         tasa = tmp.groupby("rango", observed=True)["falla"].mean().mul(100).reset_index()
         tasa["rango"] = tasa["rango"].astype(str)
         c2.plotly_chart(px.bar(tasa, x="rango", y="falla", text_auto=".2f",
                                title=f"% de fallas por quintil de {VARIABLES[var].lower()}",
-                               labels={"rango": "Rango (quintiles)", "falla": "% con falla"}),
-                        use_container_width=True)
+                               labels={"rango": "Rango (quintiles)", "falla": "% con falla"}))
     except ValueError:
         c2.info("No hay suficientes datos para calcular quintiles.")
     st.caption("Esta relación es una asociación observada en los datos, no prueba causalidad.")
@@ -202,7 +207,7 @@ with tabs[3]:
 with tabs[4]:
     st.subheader("Tabla de datos")
     st.caption(f"{len(dff):,} registros con los filtros aplicados.")
-    st.dataframe(dff, use_container_width=True, height=450)
+    st.dataframe(dff, height=450)
     st.download_button("⬇️ Descargar datos filtrados (CSV)",
                        data=dff.to_csv(index=False).encode("utf-8"),
                        file_name="datos_filtrados.csv", mime="text/csv")
