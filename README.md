@@ -8,7 +8,7 @@ Aplicación web interactiva desarrollada en **Python + Streamlit** para supervis
 | --- | --- |
 | 🔗 **Dashboard público** | https://nombre-proyecto.streamlit.app *(reemplazar)* |
 | 💻 **Repositorio** | https://github.com/usuario/repositorio *(reemplazar)* |
-| 🎥 **Video de sustentación** | https://youtu.be/ *(reemplazar)* |
+| 🎥 **Video de sustentación** | (https://youtu.be/fNjBx3lLCVU?si=tIp9Kb1V50O5MFIU) |
 
 ## 👷 Ingenieros encargados
 
