@@ -6,9 +6,9 @@ Aplicación web interactiva desarrollada en **Python + Streamlit** para supervis
 
 | | |
 | --- | --- |
-| 🔗 **Dashboard público** | https://nombre-proyecto.streamlit.app *(reemplazar)* |
-| 💻 **Repositorio** | https://github.com/usuario/repositorio *(reemplazar)* |
-| 🎥 **Video de sustentación** | (https://youtu.be/fNjBx3lLCVU?si=tIp9Kb1V50O5MFIU) |
+| 🔗 **Dashboard público** | https://proyecto-integrador-final.streamlit.app/  |
+| 💻 **Repositorio** | https://github.com/santisaldarriaga25arias-ddp/proyecto-integrador |
+| 🎥 **Video de sustentación** | https://youtu.be/fNjBx3lLCVU?si=tIp9Kb1V50O5MFIU |
 
 ## 👷 Ingenieros encargados
 
